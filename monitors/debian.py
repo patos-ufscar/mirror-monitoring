@@ -27,7 +27,7 @@ def check():
             age = [x for x in td_class if x.startswith('age')]
             value = ''.join(td.strings).strip()
             age_warn = age != [] and age != ['age0']
-            if col_name == 'last update':
+            if col_name in {'mastertrace', 'last update'}:
                 # be more tolerant
                 age_warn = age_warn and age != ['age1']
             if 'error' in td_class or age_warn:
