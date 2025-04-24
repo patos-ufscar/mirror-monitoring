@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 hostname = 'mirror.ufscar.br'
 min_completion_pct = 1.0
 max_delay = 90
-max_age = 30*60
 
 def check():
     all_alerts = []
@@ -24,8 +23,6 @@ def check():
 
         if not entry['last_sync']:
             alerts.append('ALERT: UNSYNCED')
-        if (datetime.now().astimezone(timezone.utc) - parse_time(entry['last_sync'])).seconds > max_age:
-            alerts.append(f'ALERT: last_sync: {entry['last_sync']}')
         if entry['completion_pct'] < min_completion_pct:
             alerts.append(f'ALERT: completion_pct: {100*entry['completion_pct']:.1f}%')
         if entry['delay'] > max_delay:
