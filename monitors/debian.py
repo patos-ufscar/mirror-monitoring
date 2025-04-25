@@ -15,6 +15,8 @@ def check():
     thead = soup.find('thead')
     column_names = [x.string for x in thead.find_all('th')]
 
+    found = False
+
     #tr = soup.find('tr', {'id': hostname})   # does not work if mirror is errored for a long time
     for tr in soup.find_all('tr'):
         td_hostname = tr.find('td', {'class': 'hostname'})
@@ -22,6 +24,7 @@ def check():
             continue
         if td_hostname.attrs['data-text'] != hostname:
             continue
+        found = True
         for td, col_name in zip(tr.find_all('td'), column_names):
             td_class = td.attrs.get('class', [])
             age = [x for x in td_class if x.startswith('age')]
@@ -39,6 +42,12 @@ def check():
 
     if alerts != []:
         alerts = [f'https://mirror-master.debian.org/status/mirror-status.html#{hostname}'] + alerts
+
+    if not found:
+        alerts.extend([
+            'https://mirror-master.debian.org/status/mirror-status.html',
+            f'ALERT: {hostname} not found in the mirror list'
+        ])
 
     return '\n'.join(alerts)
 

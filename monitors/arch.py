@@ -3,6 +3,7 @@ import requests
 from datetime import datetime, timezone
 
 hostname = 'mirror.ufscar.br'
+expected_entries = 2
 min_completion_pct = 1.0
 max_delay = 90
 
@@ -14,10 +15,14 @@ def check():
 
     entries = r.json()['urls']
 
+    found = 0
+
     for entry in entries:
         url = entry['url']
         if f'//{hostname}/' not in url:
             continue
+
+        found += 1
 
         alerts = []
 
@@ -31,6 +36,12 @@ def check():
         if alerts != []:
             alerts = [url, entry['details']] + alerts
         all_alerts.extend(alerts)
+
+    if found != expected_entries:
+        all_alerts.extend([
+            'https://archlinux.org/mirrors/status',
+            f'ALERT: found only {found} entries for {hostname}, expected {expected_entries}'
+        ])
 
     return '\n'.join(all_alerts)
 
