@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 import requests
 from datetime import datetime, timezone
+from hashlib import shake_128
+from lib import storage
 
 hostname = 'mirror.ufscar.br'
 expected_entries = 2
-min_completion_pct = 1.0
 max_delay = 90
 
 def check():
@@ -28,10 +29,14 @@ def check():
 
         if not entry['last_sync']:
             alerts.append('ALERT: UNSYNCED')
-        if entry['completion_pct'] < min_completion_pct:
-            alerts.append(f'ALERT: completion_pct: {100*entry['completion_pct']:.1f}%')
         if entry['delay'] > max_delay:
             alerts.append(f'ALERT: delay: {entry['delay']} seconds')
+
+        completion_pct = int(round(100*entry['completion_pct']))
+        last_completion_pct = int(storage.swap(f'arch_completion_pct_{shake_128(url.encode()).hexdigest(4)}', str(completion_pct), '100'))
+
+        if completion_pct < last_completion_pct:
+            alerts.append(f'ALERT: completion_pct: {completion_pct}%')
 
         if alerts != []:
             alerts = [url, entry['details']] + alerts
