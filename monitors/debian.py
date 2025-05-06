@@ -33,8 +33,6 @@ def check():
             if col_name in {'mastertrace', 'last update'}:
                 # be more tolerant
                 age_warn = age_warn and age != ['age1']
-            if col_name == '~#/d':  # temporarily disable warns for this column
-                age_warn = False
             if 'error' in td_class or age_warn:
                 alerts.append(f'ALERT: {col_name}: {value}')
             if col_name == 'extra' and value != '':
