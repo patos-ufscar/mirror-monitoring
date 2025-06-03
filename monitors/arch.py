@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import requests
 from datetime import datetime, timezone
+from hashlib import shake_128
 import firebase_admin
 from firebase_admin import firestore
 
@@ -37,10 +38,10 @@ def check():
 
         completion_pct = int(round(100*entry['completion_pct']))
 
-        doc_ref = db.collection('mirror-monitoring', 'arch', 'completion_pct').document(url)
+        doc_ref = db.collection('mirror-monitoring', 'arch', 'completion_pct').document(shake_128(url.encode()).hexdigest(8))
         doc = doc_ref.get()
         last_completion_pct = doc.to_dict()['last_completion_pct'] if doc.exists else 100
-        doc_ref.set({'last_completion_pct': completion_pct})
+        doc_ref.set({'url': url, 'last_completion_pct': completion_pct})
 
         if completion_pct < last_completion_pct:
             alerts.append(f'ALERT: completion_pct: {completion_pct}%')
