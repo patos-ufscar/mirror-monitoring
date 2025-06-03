@@ -1,10 +1,14 @@
 #!/usr/bin/env python
 import requests
 from datetime import datetime, timezone
+import firebase_admin
+from firebase_admin import firestore
+
+app = firebase_admin.initialize_app()
+db = firestore.client()
 
 hostname = 'mirror.ufscar.br'
 expected_entries = 2
-min_completion_pct = 1.0
 max_delay = 90
 
 def check():
@@ -28,10 +32,18 @@ def check():
 
         if not entry['last_sync']:
             alerts.append('ALERT: UNSYNCED')
-        if entry['completion_pct'] < min_completion_pct:
-            alerts.append(f'ALERT: completion_pct: {100*entry['completion_pct']:.1f}%')
         if entry['delay'] > max_delay:
             alerts.append(f'ALERT: delay: {entry['delay']} seconds')
+
+        completion_pct = int(round(100*entry['completion_pct']))
+
+        doc_ref = db.collection('mirror-monitoring', 'arch', 'completion_pct').document(url)
+        doc = doc_ref.get()
+        last_completion_pct = doc.to_dict()['last_completion_pct'] if doc.exists else 100
+        doc_ref.set({'last_completion_pct': completion_pct})
+
+        if completion_pct < last_completion_pct:
+            alerts.append(f'ALERT: completion_pct: {completion_pct}%')
 
         if alerts != []:
             alerts = [url, entry['details']] + alerts
