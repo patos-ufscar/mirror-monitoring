@@ -41,10 +41,13 @@ def check():
         doc_ref = db.collection('mirror-monitoring', 'arch', 'completion_pct').document(shake_128(url.encode()).hexdigest(8))
         doc = doc_ref.get()
         last_completion_pct = doc.to_dict()['last_completion_pct'] if doc.exists else 100
-        doc_ref.set({'url': url, 'last_completion_pct': completion_pct})
+        if last_completion_pct != completion_pct:
+            doc_ref.set({'url': url, 'last_completion_pct': completion_pct})
 
         if completion_pct < last_completion_pct:
             alerts.append(f'ALERT: completion_pct: {completion_pct}%')
+        elif completion_pct == 100 and last_completion_pct < 100:
+            alerts.append(f'SOLVED: completion_pct: {completion_pct}%')
 
         if alerts != []:
             alerts = [url, entry['details']] + alerts
