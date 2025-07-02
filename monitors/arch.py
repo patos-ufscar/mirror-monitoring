@@ -10,7 +10,7 @@ db = firestore.client()
 
 hostname = 'mirror.ufscar.br'
 expected_entries = 2
-max_delay = 90
+max_delay = 120
 
 def check():
     all_alerts = []
