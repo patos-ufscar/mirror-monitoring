@@ -10,7 +10,8 @@ db = firestore.client()
 
 hostname = 'mirror.ufscar.br'
 expected_entries = 2
-max_delay = 120
+delay_mean = 30
+delay_dev = 60
 
 def check():
     all_alerts = []
@@ -27,18 +28,31 @@ def check():
         if f'//{hostname}/' not in url:
             continue
 
+        url_hash = shake_128(url.encode()).hexdigest(8)
+
         found += 1
 
         alerts = []
 
         if not entry['last_sync']:
             alerts.append('ALERT: UNSYNCED')
-        if entry['delay'] > max_delay:
-            alerts.append(f'ALERT: delay: {entry['delay']} seconds')
+
+        delay = entry['delay']
+        doc_ref = db.collection('mirror-monitoring', 'arch', 'delay').document(url_hash)
+        doc = doc_ref.get()
+        last_delay = doc.to_dict()['last_delay'] if doc.exists else delay_mean
+        if delay > last_delay + delay_dev:
+            alerts.append(f'ALERT: DELAY INCREASED to {delay} seconds')
+
+        if delay <= delay_mean + delay_dev and last_delay != delay_mean:
+            alerts.append(f'SOLVED: delay: {delay} seconds')
+            doc_ref.set({'url': url, 'last_delay': delay_mean})
+        elif not (last_delay - delay_dev < delay < last_delay + delay_dev):
+            doc_ref.set({'url': url, 'last_delay': delay})
 
         completion_pct = int(round(100*entry['completion_pct']))
 
-        doc_ref = db.collection('mirror-monitoring', 'arch', 'completion_pct').document(shake_128(url.encode()).hexdigest(8))
+        doc_ref = db.collection('mirror-monitoring', 'arch', 'completion_pct').document(url_hash)
         doc = doc_ref.get()
         last_completion_pct = doc.to_dict()['last_completion_pct'] if doc.exists else 100
         if last_completion_pct != completion_pct:
