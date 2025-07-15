@@ -43,11 +43,11 @@ def check():
         last_delay = doc.to_dict()['last_delay'] if doc.exists else delay_mean
         if delay > last_delay + delay_dev:
             alerts.append(f'ALERT: DELAY INCREASED to {delay} seconds')
-
-        if delay <= delay_mean + delay_dev and last_delay != delay_mean:
+            doc_ref.set({'url': url, 'last_delay': delay})
+        elif delay <= delay_mean + delay_dev and last_delay != delay_mean:
             alerts.append(f'SOLVED: delay: {delay} seconds')
             doc_ref.set({'url': url, 'last_delay': delay_mean})
-        elif not (last_delay - delay_dev < delay < last_delay + delay_dev):
+        elif delay < last_delay - delay_dev:
             doc_ref.set({'url': url, 'last_delay': delay})
 
         completion_pct = int(round(100*entry['completion_pct']))
