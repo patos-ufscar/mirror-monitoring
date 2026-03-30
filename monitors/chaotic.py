@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import requests
 
-subdomain = 'br-mirror'
+subdomain = 'br-1-mirror'
 
 def check():
     alerts = []
