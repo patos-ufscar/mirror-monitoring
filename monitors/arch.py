@@ -2,18 +2,15 @@
 import requests
 from datetime import datetime, timezone
 from hashlib import shake_128
-import firebase_admin
-from firebase_admin import firestore
-
-app = firebase_admin.initialize_app()
-db = firestore.client()
 
 hostname = 'mirror.ufscar.br'
 expected_entries = 2
 delay_mean = 30
 delay_dev = 60
 
-def check():
+def check(state=None):
+    if state is None:
+        state = {}
     all_alerts = []
 
     r = requests.get('https://archlinux.org/mirrors/status/json/', timeout=10)
@@ -38,25 +35,23 @@ def check():
             alerts.append('ALERT: UNSYNCED')
 
         delay = entry['delay']
-        doc_ref = db.collection('mirror-monitoring', 'arch', 'delay').document(url_hash)
-        doc = doc_ref.get()
-        last_delay = doc.to_dict()['last_delay'] if doc.exists else delay_mean
-        if delay > last_delay + delay_dev:
+        previous = state.setdefault(url_hash, {'url': url})
+        last_delay = previous.get('last_delay', delay_mean)
+        if delay is None:
+            alerts.append('ALERT: delay unavailable')
+        elif delay > last_delay + delay_dev:
             alerts.append(f'ALERT: DELAY INCREASED to {delay} seconds')
-            doc_ref.set({'url': url, 'last_delay': delay})
+            previous['last_delay'] = delay
         elif delay <= delay_mean + delay_dev and last_delay != delay_mean:
             alerts.append(f'SOLVED: delay: {delay} seconds')
-            doc_ref.set({'url': url, 'last_delay': delay_mean})
+            previous['last_delay'] = delay_mean
         elif delay < last_delay - delay_dev:
-            doc_ref.set({'url': url, 'last_delay': delay})
+            previous['last_delay'] = delay
 
         completion_pct = int(round(100*entry['completion_pct']))
 
-        doc_ref = db.collection('mirror-monitoring', 'arch', 'completion_pct').document(url_hash)
-        doc = doc_ref.get()
-        last_completion_pct = doc.to_dict()['last_completion_pct'] if doc.exists else 100
-        if last_completion_pct != completion_pct:
-            doc_ref.set({'url': url, 'last_completion_pct': completion_pct})
+        last_completion_pct = previous.get('last_completion_pct', 100)
+        previous['last_completion_pct'] = completion_pct
 
         if completion_pct < last_completion_pct:
             alerts.append(f'ALERT: completion_pct: {completion_pct}%')

@@ -3,7 +3,7 @@ import requests
 
 subdomain = 'br-1-mirror'
 
-def check():
+def check(state=None):
     alerts = []
 
     r = requests.get('https://status.chaotic.cx/mirrors.json', timeout=10)

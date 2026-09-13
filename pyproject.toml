@@ -10,8 +10,8 @@ requires-python = ">=3.13,<4"
 dependencies = [
     "requests (>=2.34.2,<3.0.0)",
     "beautifulsoup4 (>=4.15.0,<5.0.0)",
-    "telegram-send (>=0.39.2,<0.40.0)",
-    "firebase-admin (>=7.4.0,<8.0.0)",
+    "python-telegram-bot (>=22.8,<23.0.0)",
+    "firebase-admin (>=7.5.0,<8.0.0)",
 ]
 
 

@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 
 hostname = 'mirror.ufscar.br'
 
-def check():
+def check(state=None):
     alerts = []
 
     status_url = f'https://launchpad.net/ubuntu/+mirror/{hostname}-archive'
