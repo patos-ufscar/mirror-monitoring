@@ -145,14 +145,30 @@ class OpenSUSETests(unittest.TestCase):
         self.assertEqual(self.check(state, 'ratingdisabled'), '')
         self.assertIn('SOLVED: https:', self.check(state, 'ratinggood'))
         self.assertEqual(self.check(state, 'ratinggood'), '')
-        self.assertIn('INFO: https:', self.check(state, 'ratingquestionable'))
+        self.assertEqual(self.check(state, 'ratingquestionable'), '')
         self.assertIn('ALERT: http:', self.check(state, 'ratingquestionable', 'ratingdisabled'))
 
     def test_initial_failure_and_bad_to_bad_transition(self):
         state = {}
         self.assertIn('ALERT:', self.check(state, 'ratingdisabled'))
-        self.assertIn('ALERT:', self.check(state, 'ratingbad'))
         self.assertEqual(self.check(state, 'ratingbad'), '')
+        self.assertEqual(self.check(state, 'ratingbad'), '')
+
+    def test_available_ratings_are_silent_and_persisted(self):
+        state = {}
+        for rating in ['ratinggood', 'ratingquestionable', 'ratingpoor',
+                       'ratingquestinable', 'ratinggood']:
+            with self.subTest(rating=rating):
+                self.assertEqual(self.check(state, rating), '')
+                self.assertEqual(state['ratings']['https'], rating)
+
+    def test_poor_to_bad_alerts_and_recovery_to_poor_solves(self):
+        state = {}
+        self.assertEqual(self.check(state, 'ratingpoor'), '')
+        self.assertIn('ALERT: https: ratingbad', self.check(state, 'ratingbad'))
+        self.assertEqual(self.check(state, 'ratingdisabled'), '')
+        self.assertIn('SOLVED: https:', self.check(state, 'ratingpoor'))
+        self.assertEqual(self.check(state, 'ratinggood'), '')
 
     def test_missing_health_preserves_state(self):
         state = {'ratings': {'https': 'ratingdisabled'}}

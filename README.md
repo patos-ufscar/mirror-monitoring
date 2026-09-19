@@ -93,8 +93,9 @@ Reexecuções automáticas do job também contam como novos ciclos para as cotas
 ### Alterações nos alertas
 
 - **openSUSE:** guarda o rating de cada protocolo. Notifica a primeira observação
-  problemática e as transições seguintes, inclusive recuperação (`SOLVED`).
-  Repetições do mesmo rating não geram mensagens. Falhas na obtenção ou leitura
+  indisponível e as transições entre disponível e indisponível, incluindo
+  recuperação (`SOLVED`). Mudanças entre `ratinggood`, `ratingquestionable` e
+  `ratingpoor`, assim como entre ratings já indisponíveis, não geram mensagens. Falhas na obtenção ou leitura
   da seção Health continuam visíveis e não apagam o último estado válido.
 - **Arch Linux 32:** consulta o [JSON oficial](https://archlinux32.org/mirrors/status/json/)
   e espera duas entradas para `mirror.ufscar.br`. Detecta `last_sync` ausente ou

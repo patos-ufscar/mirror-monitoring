@@ -4,7 +4,8 @@ from bs4 import BeautifulSoup
 
 hostname = 'mirror.ufscar.br'
 status_url = f'https://download.opensuse.org/app/server/{hostname}'
-ok_ratings = {'ratinggood', 'ratingquestionable', 'ratingquestinable'}
+# No MirrorCache, ratings positivos mantêm a capacidade disponível.
+ok_ratings = {'ratinggood', 'ratingquestionable', 'ratingquestinable', 'ratingpoor'}
 
 def check(state=None):
     if state is None:
@@ -42,12 +43,10 @@ def check(state=None):
         rating = ratings[0] if ratings else 'missing rating'
         current[protocol_name] = rating
         old = previous.get(protocol_name)
-        if old != rating:
-            if rating not in ok_ratings:
-                alerts.append(f'ALERT: {protocol_name}: {rating}')
-            elif old is not None:
-                prefix = 'SOLVED' if old not in ok_ratings else 'INFO'
-                alerts.append(f'{prefix}: {protocol_name}: {old} → {rating}')
+        if rating not in ok_ratings and (old is None or old in ok_ratings):
+            alerts.append(f'ALERT: {protocol_name}: {rating}')
+        elif rating in ok_ratings and old is not None and old not in ok_ratings:
+            alerts.append(f'SOLVED: {protocol_name}: {old} → {rating}')
 
     for missing in previous.keys() - current.keys():
         current[missing] = 'missing protocol'
