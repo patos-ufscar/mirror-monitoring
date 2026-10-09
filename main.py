@@ -12,6 +12,8 @@ import sys
 ROOT = Path(__file__).resolve().parent
 MONITORS = ('arch', 'archlinux32', 'chaotic', 'debian', 'opensuse', 'ubuntu')
 MONITOR_TIMEOUT = 90
+# Falhas consecutivas toleradas antes do alerta: 4 ciclos de 15 minutos = 1 hora.
+FAILURE_THRESHOLD = 4
 logger = logging.getLogger(__name__)
 
 
@@ -30,10 +32,13 @@ def run_monitor(name, state, timeout=MONITOR_TIMEOUT):
         input=json.dumps(state, ensure_ascii=False, allow_nan=False),
         capture_output=True, encoding='utf-8', timeout=timeout, cwd=ROOT,
     )
+    stderr = result.stderr.strip()
     if result.returncode:
-        raise RuntimeError(f'exit {result.returncode}: {result.stderr.strip()}')
-    if result.stderr.strip():
-        logger.warning('%s: %s', name, result.stderr.strip())
+        # O traceback completo fica no log; o alerta leva só a última linha.
+        logger.error('%s: %s', name, stderr)
+        raise RuntimeError(f'exit {result.returncode}: {stderr.splitlines()[-1] if stderr else ""}')
+    if stderr:
+        logger.warning('%s: %s', name, stderr)
     payload = json.loads(result.stdout)
     if not isinstance(payload['state'], dict) or not isinstance(payload['message'], str):
         raise ValueError('Invalid monitor response')
@@ -44,33 +49,63 @@ async def run_cycle(send, document_factory=state_document, runner=run_monitor):
     errors = []
     document = None
     states = {}
+    failures = {}
     try:
         candidate = document_factory()
         snapshot = candidate.get(retry=None, timeout=15)
         data = snapshot.to_dict() if snapshot.exists else {'version': 1, 'monitors': {}}
-        if data.get('version') != 1 or not isinstance(data.get('monitors'), dict):
+        if (data.get('version') != 1 or not isinstance(data.get('monitors'), dict)
+                or not isinstance(data.get('failures', {}), dict)):
             raise ValueError('Invalid persisted state schema')
         states = data['monitors']
+        failures = data.get('failures', {})
         document = candidate
     except Exception as exc:
         errors.append(f'Firestore read failed: {exc}')
         logger.exception('Falha na leitura do estado')
 
+    ok = True
     updated = deepcopy(states)
+    updated_failures = dict(failures)
     for name in MONITORS:
+        count = failures.get(name, 0)
         try:
             message, new_state = runner(name, deepcopy(states.get(name, {})))
+        except Exception as exc:
+            logger.exception('Falha no monitor %s', name)
+            count += 1
+            ok = ok and count < FAILURE_THRESHOLD
+            if document is None:
+                # Sem estado lido não há como contar falhas: alertamos de imediato.
+                errors.append(f'{name}: {exc}')
+            elif count == FAILURE_THRESHOLD:
+                try:
+                    await send(f'ALERT: {name}: {count} consecutive failures, last: {exc}')
+                except Exception:
+                    # Sem avançar a contagem, o alerta é refeito no próximo ciclo.
+                    logger.exception('Falha no envio do alerta do monitor %s', name)
+                    continue
+            updated_failures[name] = count
+            continue
+
+        if count >= FAILURE_THRESHOLD:
+            message = '\n'.join(filter(None, (f'SOLVED: {name}: monitor recovered', message)))
+        try:
             # Só confirmamos transições depois que todas as partes forem enviadas.
             if message:
                 await send(message)
             updated[name] = new_state
+            updated_failures.pop(name, None)
         except Exception as exc:
             errors.append(f'{name}: {exc}')
-            logger.exception('Falha no monitor %s', name)
+            logger.exception('Falha no envio do monitor %s', name)
 
-    if document is not None and updated != states:
+    if document is not None and (updated != states or updated_failures != failures):
         try:
-            document.set({'version': 1, 'monitors': updated}, retry=None, timeout=15)
+            document.set(
+                {'version': 1, 'monitors': updated, 'failures': updated_failures},
+                retry=None, timeout=15,
+            )
         except Exception as exc:
             errors.append(f'Firestore write failed: {exc}')
             logger.exception('Falha na gravação do estado')
@@ -80,7 +115,7 @@ async def run_cycle(send, document_factory=state_document, runner=run_monitor):
             await send(f'ALERT: {error}')
         except Exception:
             logger.exception('Falha no envio de diagnóstico ao Telegram')
-    return not errors
+    return ok and not errors
 
 
 def worker(name):

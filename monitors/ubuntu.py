@@ -8,12 +8,8 @@ def check(state=None):
     alerts = []
 
     status_url = f'https://launchpad.net/ubuntu/+mirror/{hostname}-archive'
-    try:
-        r = requests.get(status_url, timeout=30)
-    except requests.Timeout:
-        # launchpad is heavy and suffers from timeout quite frequently
-        # let's just hope that next time it comes back
-        return ''
+    # Timeouts esporádicos do launchpad são tolerados por main.FAILURE_THRESHOLD.
+    r = requests.get(status_url, timeout=30)
     r.raise_for_status()
 
     soup = BeautifulSoup(r.text, 'html.parser')

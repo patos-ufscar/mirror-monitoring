@@ -24,10 +24,13 @@ class CycleTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.enterContext(patch.object(main, "logger"))
 
-    def document(self, states):
+    def document(self, states, failures=None):
         document = Mock()
         document.get.return_value.exists = True
-        document.get.return_value.to_dict.return_value = {'version': 1, 'monitors': states}
+        data = {'version': 1, 'monitors': states}
+        if failures is not None:
+            data['failures'] = failures
+        document.get.return_value.to_dict.return_value = data
         return document
 
     async def test_one_read_and_write_for_all_monitors(self):
@@ -62,9 +65,58 @@ class CycleTests(unittest.IsolatedAsyncioTestCase):
             if name == 'arch':
                 raise RuntimeError('crash')
             return '', state
-        self.assertFalse(await main.run_cycle(AsyncMock(), lambda: document, run))
+        send = AsyncMock()
+        # Primeira falha é tolerada: sem alerta e sem falhar o ciclo.
+        self.assertTrue(await main.run_cycle(send, lambda: document, run))
         self.assertEqual(visited, list(main.MONITORS))
-        self.assertEqual(document.set.call_args.args[0]['monitors']['arch'], {'old': True})
+        send.assert_not_awaited()
+        stored = document.set.call_args.args[0]
+        self.assertEqual(stored['monitors']['arch'], {'old': True})
+        self.assertEqual(stored['failures'], {'arch': 1})
+
+    async def test_consecutive_failures_alert_once_then_solve(self):
+        def crash(name, state):
+            raise RuntimeError('ReadTimeout: timed out')
+        threshold = main.FAILURE_THRESHOLD
+        with patch.object(main, 'MONITORS', ('arch',)):
+            for previous, alerts in ((threshold - 2, 0), (threshold - 1, 1), (threshold, 0)):
+                with self.subTest(previous=previous):
+                    document, send = self.document({}, {'arch': previous}), AsyncMock()
+                    self.assertEqual(await main.run_cycle(send, lambda: document, crash), previous + 1 < threshold)
+                    self.assertEqual(send.await_count, alerts)
+                    self.assertEqual(document.set.call_args.args[0]['failures'], {'arch': previous + 1})
+            alert_send = AsyncMock()
+            await main.run_cycle(alert_send, lambda: self.document({}, {'arch': threshold - 1}), crash)
+            self.assertEqual(
+                alert_send.await_args.args[0],
+                f'ALERT: arch: {threshold} consecutive failures, last: ReadTimeout: timed out',
+            )
+
+            document, send = self.document({}, {'arch': threshold + 5}), AsyncMock()
+            self.assertTrue(await main.run_cycle(send, lambda: document, lambda n, s: ('url\nALERT: x', {'ok': True})))
+            send.assert_awaited_once_with('SOLVED: arch: monitor recovered\nurl\nALERT: x')
+            self.assertEqual(document.set.call_args.args[0], {'version': 1, 'monitors': {'arch': {'ok': True}}, 'failures': {}})
+
+            # Recuperação antes do limite é silenciosa.
+            document, send = self.document({}, {'arch': threshold - 1}), AsyncMock()
+            self.assertTrue(await main.run_cycle(send, lambda: document, lambda n, s: ('', s)))
+            send.assert_not_awaited()
+            self.assertEqual(document.set.call_args.args[0]['failures'], {})
+
+    async def test_unsent_threshold_alert_is_retried_next_cycle(self):
+        document = self.document({}, {'arch': main.FAILURE_THRESHOLD - 1})
+        send = AsyncMock(side_effect=RuntimeError('Telegram unavailable'))
+        with patch.object(main, 'MONITORS', ('arch',)):
+            self.assertFalse(await main.run_cycle(send, lambda: document, Mock(side_effect=RuntimeError('crash'))))
+        document.set.assert_not_called()
+
+    async def test_failure_alerts_immediately_without_persisted_counts(self):
+        document = self.document({})
+        document.get.side_effect = RuntimeError('offline')
+        send = AsyncMock()
+        with patch.object(main, 'MONITORS', ('arch',)):
+            self.assertFalse(await main.run_cycle(send, lambda: document, Mock(side_effect=RuntimeError('crash'))))
+        self.assertIn('ALERT: arch: crash', [call.args[0] for call in send.await_args_list])
 
     async def test_send_failure_does_not_acknowledge_transition(self):
         document = self.document({'opensuse': {'old': True}})
@@ -92,12 +144,14 @@ class CycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Firestore write failed', send.call_args.args[0])
 
     async def test_invalid_schema_is_not_overwritten(self):
-        document = self.document({})
-        document.get.return_value.to_dict.return_value = {'version': 999}
-        runner = Mock(return_value=('', {}))
-        self.assertFalse(await main.run_cycle(AsyncMock(), lambda: document, runner))
-        document.set.assert_not_called()
-        self.assertEqual(runner.call_count, len(main.MONITORS))
+        for data in ({'version': 999}, {'version': 1, 'monitors': {}, 'failures': []}):
+            with self.subTest(data=data):
+                document = self.document({})
+                document.get.return_value.to_dict.return_value = data
+                runner = Mock(return_value=('', {}))
+                self.assertFalse(await main.run_cycle(AsyncMock(), lambda: document, runner))
+                document.set.assert_not_called()
+                self.assertEqual(runner.call_count, len(main.MONITORS))
 
 
 class MessageTests(unittest.TestCase):
@@ -126,8 +180,12 @@ class WorkerTests(unittest.TestCase):
                 for body, error in cases:
                     with self.subTest(body=body):
                         (root / 'monitors/arch.py').write_text(f'def check(state):\n    {body}\n')
-                        with self.assertRaises(error):
+                        with self.assertRaises(error) as raised:
                             main.run_monitor('arch', {}, timeout=0.5)
+                        self.assertNotIn('\n', str(raised.exception))
+                (root / 'monitors/arch.py').write_text('def check(state):\n    raise RuntimeError("bug")\n')
+                with self.assertRaisesRegex(RuntimeError, r'^exit 1: RuntimeError: bug$'):
+                    main.run_monitor('arch', {})
                 (root / 'monitors/ubuntu.py').write_text('def check(state):\n    state["ok"] = True\n    return "recuperação"\n', encoding='utf-8')
                 self.assertEqual(main.run_monitor('ubuntu', {}), ('recuperação', {'ok': True}))
 

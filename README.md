@@ -78,12 +78,21 @@ e estouros de prazo preservam o estado anterior e não interrompem os demais.
 Para adicionar um monitor, implemente `check(state)` em `monitors/` e registre
 seu nome em `MONITORS`, em `main.py`; permissões de execução não são necessárias.
 
+Falhas de monitor são toleradas por `FAILURE_THRESHOLD` ciclos consecutivos
+(4, ou 1 hora), contados no campo `failures` do mesmo documento. Ao atingir o
+limite, é enviado um único alerta com a última linha do erro; o traceback
+completo fica apenas no log. Na primeira execução bem-sucedida depois disso,
+envia-se `SOLVED`; recuperações antes do limite são silenciosas. Os monitores
+não precisam tratar erros de rede. Sem leitura do estado não há contagem, e a
+falha é alertada de imediato.
+
 O estado só é confirmado após o envio bem-sucedido da mensagem ao Telegram.
 Uma falha de envio mantém o estado anterior daquele monitor. Falhas no
 Firestore são reportadas; uma falha de leitura permite executar os monitores
 sem estado, mas impede a gravação para não sobrescrever dados desconhecidos.
 Falhas de persistência ou interrupções entre envio e gravação podem repetir
-alertas no próximo ciclo. O processo termina com código 1 se houver falhas.
+alertas no próximo ciclo. O processo termina com código 1 se houver falhas
+reportadas ou monitores que atingiram o limite de falhas consecutivas.
 
 Configure o agendador/Cloud Run para **não sobrepor execuções** (uma tarefa por
 execução e prazo do job inferior a 15 minutos). A gravação do documento completo
