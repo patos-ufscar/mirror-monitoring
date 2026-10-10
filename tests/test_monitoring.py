@@ -272,9 +272,16 @@ class ArchTests(unittest.TestCase):
         data = {'last_check': datetime.now(timezone.utc).isoformat(), 'urls': []}
         with patch.object(archlinux32.requests, 'get', return_value=response(json=data)):
             self.assertIn('found 0 entries', archlinux32.check({}))
+            fresh = data['last_check']
             data['last_check'] = '2026-01-01T00:00:00Z'
             state = {'previous': True}
             self.assertIn('status data', archlinux32.check(state))
+            self.assertEqual(archlinux32.check(state), '')
+            self.assertEqual(state, {'previous': True, 'status_stale': True})
+            data['last_check'] = fresh
+            with patch.object(archlinux32, 'expected_entries', 0):
+                self.assertIn('SOLVED: mirror status data updated', archlinux32.check(state))
+                self.assertEqual(archlinux32.check(state), '')
             self.assertEqual(state, {'previous': True})
 
 

@@ -111,7 +111,9 @@ Reexecuções automáticas do job também contam como novos ciclos para as cotas
   com mais de 12 horas, quedas de disponibilidade e recuperação. Usa o timestamp
   de sincronização diretamente, pois o campo `delay` observado não corresponde
   às unidades anunciadas na página. Dados do serviço com mais de duas horas
-  também geram alerta. Os limites ficam em `monitors/archlinux32.py`.
+  geram um único alerta e `SOLVED` quando voltam a ser atualizados; enquanto
+  estão antigos, o estado dos mirrors é preservado. Os limites ficam em
+  `monitors/archlinux32.py`.
 - **Debian:** compara o `archive version` numérico na mesma
   [tabela de status](https://mirror-master.debian.org/status/mirror-status.html).
   Suprime apenas avisos de idade de `mastertrace`, `archive version` e

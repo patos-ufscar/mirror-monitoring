@@ -26,10 +26,16 @@ def check(state=None):
     response.raise_for_status()
     data = response.json()
     now = datetime.now(timezone.utc)
+    # Alertamos só na transição; com dados antigos, o estado dos mirrors é preservado.
     if (now - parse_time(data['last_check'])).total_seconds() > max_status_age:
+        if state.get('status_stale', False):
+            return ''
+        state['status_stale'] = True
         return f'{status_url}\nALERT: mirror status data is more than 2 hours old'
 
     alerts = []
+    if state.pop('status_stale', False):
+        alerts.append(f'SOLVED: mirror status data updated at {data["last_check"]}')
     found = 0
     for entry in data['urls']:
         url = entry['url']
